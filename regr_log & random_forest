@@ -1,0 +1,275 @@
+set.seed(10)
+db = file.choose() #selezioni direttamente il file csv che vuoi importare 
+
+############################## preparazione ##############################
+
+dataset = read.csv2(db)
+dataset_var = dataset[,3:23]
+
+default=subset(dataset_var,IND_BAD==1)
+bonis=subset(dataset_var,IND_BAD==0)
+
+train_def <- sample(nrow(default), 0.75*nrow(default), replace = FALSE)
+TrainSet1 <- default[train_def,] # training set per i default
+TestSet1 <- default[-train_def,] # test set per i default
+
+train_bon <- sample(nrow(bonis), 0.75*nrow(bonis), replace = FALSE)
+TrainSet2 <- bonis[train_bon,] # training per i default
+TestSet2 <- bonis[-train_bon,]
+
+TrainSet=as.data.frame(rbind(TrainSet1,TrainSet2))
+TestSet=as.data.frame(rbind(TestSet1,TestSet2))
+TrainSet$IND_BAD=as.factor(TrainSet$IND_BAD)
+TestSet$IND_BAD=as.factor(TestSet$IND_BAD)
+
+############################## logistic regr ##############################
+
+log=glm(IND_BAD ~ ., family = binomial(link=logit), data=TrainSet )
+
+nothing = glm(IND_BAD~ 1, family = binomial(link=logit), data=TrainSet)
+stepwise_both = step(nothing, scope=list(lower=formula(nothing),upper=formula(log)), direction="both",trace=0)
+# CCU_A_SM + RTPNM6_NIMP + RTMCI_A_SM + ANU_A_SM + FLAG_CCR + CCROTUT_TM + FLAG_RTP + RTU_IMPINIZ_AM + 
+#  PCNRI_S_SM + FLAG_ANU + FLAG_PCNR + PCU_A_SM + PCNM6_SC + ANNM6_SC
+
+# stepwise ci mette un po, logstep lo utilizziamo per velocizzare #
+logstep=glm(IND_BAD ~ CCU_A_SM + RTPNM6_NIMP + RTMCI_A_SM + ANU_A_SM + FLAG_CCR + CCROTUT_TM + FLAG_RTP + RTU_IMPINIZ_AM + PCNRI_S_SM + FLAG_ANU + FLAG_PCNR + PCU_A_SM + PCNM6_SC + ANNM6_SC, family = binomial(link=logit), data=TrainSet )
+
+############# TRAIN #############
+
+pl_train=predict(logstep,TrainSet)
+pred_log_train <-as.numeric(pl_train>0.5)
+
+## SOMERS D - C ##
+library(rms)
+logit<-lrm(IND_BAD~ CCU_A_SM + RTPNM6_NIMP + RTMCI_A_SM + ANU_A_SM + FLAG_CCR + CCROTUT_TM + FLAG_RTP + RTU_IMPINIZ_AM + PCNRI_S_SM + FLAG_ANU + FLAG_PCNR + PCU_A_SM + PCNM6_SC + ANNM6_SC, data=TrainSet)
+c_log = logit$stats["C"] # c=0.8
+somersd_log = logit$stats["Dxy"] # somersD=0.62
+
+## AR - AUC - TCC - sens - spec ##
+
+ar_train_l=mean(pred_log_train==TrainSet$IND_BAD)  # accuracy (AR)      
+auc_train_l =  abs((ar_train_l+1)/2)
+auc_train_l #0.9708647
+
+conf_matrix_l=table(pred_log_train,TrainSet$IND_BAD)
+pos=conf_matrix_l[1,1]/(conf_matrix_l[1,1]+conf_matrix_l[1,2])
+neg=conf_matrix_l[2,2]/(conf_matrix_l[2,1]+conf_matrix_l[2,2])
+TCC_l=mean(pos,neg)
+TCC_l #tasso di corretta classificazione training = 0.9439622
+sens_l=conf_matrix_l[1,1]/(conf_matrix_l[1,1]+conf_matrix_l[2,1])
+spec_l=conf_matrix_l[2,2]/(conf_matrix_l[1,2]+conf_matrix_l[2,2])
+
+############# TEST #############
+
+# regressione logistica con le stesse variabili del training #
+logstep_test<-glm(IND_BAD~ CCU_A_SM + RTPNM6_NIMP + RTMCI_A_SM + ANU_A_SM + FLAG_CCR + CCROTUT_TM + FLAG_RTP + RTU_IMPINIZ_AM + PCNRI_S_SM + FLAG_ANU + FLAG_PCNR + PCU_A_SM + PCNM6_SC + ANNM6_SC, family = binomial(link=logit), data=TestSet)
+pl_test=predict(logstep_test,TestSet,type="response")
+pred_log_test <-as.numeric(pl_test>0.5)
+
+## SOMERS D e C ##
+
+logit_test<-lrm(IND_BAD~ CCU_A_SM + RTPNM6_NIMP + RTMCI_A_SM + ANU_A_SM + FLAG_CCR + CCROTUT_TM + FLAG_RTP + RTU_IMPINIZ_AM + PCNRI_S_SM + FLAG_ANU + FLAG_PCNR + PCU_A_SM + PCNM6_SC + ANNM6_SC, data=TestSet)
+c_logt = logit_test$stats["C"] # c=0.8095983 
+somersd_logt = logit_test$stats["Dxy"] # somersD= 0.6191967
+
+## AR - AUC - TCC - sensitivity - specificity ##
+
+ar_test_l=mean(pred_log_test==TestSet$IND_BAD)  # accuracy (AR)      
+auc_test_l = abs((ar_test_l+1)/2)
+auc_test_l #0.970504
+conf_matrix_lt=table(pred_log_test,TestSet$IND_BAD) 
+
+pos=conf_matrix_lt[1,1]/(conf_matrix_lt[1,1]+conf_matrix_lt[1,2])
+neg=conf_matrix_lt[2,2]/(conf_matrix_lt[2,1]+conf_matrix_lt[2,2])
+TCC_lt=mean(pos,neg)
+TCC_lt #tasso di corretta classificazione test = 0.9439274
+sens_lt=conf_matrix_lt[1,1]/(conf_matrix_lt[1,1]+conf_matrix_lt[2,1])
+spec_lt=conf_matrix_lt[2,2]/(conf_matrix_lt[1,2]+conf_matrix_lt[2,2])
+
+tabella_log=matrix(0,7,2)
+tabella_log=as.data.frame(tabella_log)
+tabella_log[1,]=c(somersd_log,somersd_logt)
+tabella_log[2,]=c(c_log,c_logt)
+tabella_log[3,]=c(ar_train_l,ar_test_l)
+tabella_log[4,]=c(auc_train_l,auc_test_l)
+tabella_log[5,]=c(TCC_l,TCC_lt)
+tabella_log[6,]=c(sens_l,sens_lt)
+tabella_log[7,]=c(spec_l,spec_lt)
+rownames(tabella_log)=c("SomersD","c","AR","AUC","TCC","sensitivity","specificity")
+colnames(tabella_log)=c("Training","Test")
+tabella_log
+
+################################### random forest ###################################
+
+library(randomForest)
+
+# ciclo per identificare il miglior valore di mtry e vedere l'AR e l'errore per i vari modelli #
+ar_train_mtry=c()
+ar_test_mtry=c()
+err_train=c()
+err_test=c()
+
+for (i in 2:8) {
+  model_try <- randomForest(IND_BAD ~ ., data = TrainSet, ntree = 30, mtry = i, importance = TRUE)
+  predTrain_try <- predict(model_try, TrainSet, type = "class")
+  predTest_try <- predict(model_try, TestSet, type = "class")
+  ar_train_mtry[i-1] = mean(predTrain_try == TrainSet$IND_BAD)
+  err_train[i-1]=mean(predTrain_try != TrainSet$IND_BAD)
+  ar_test_mtry[i-1] = mean(predTest_try == TestSet$IND_BAD)
+  err_test[i-1]=mean(predTest_try != TestSet$IND_BAD)
+}
+
+
+plot(2:8,ar_train_mtry,col=3,xlab="mtry",ylab="ar",pch=19)
+lines(2:8,ar_test_mtry, pch=19,type="p",col=2)
+legend("topleft", legend = c("Training", "Test"),
+       col = c(3,2), lty = 1:2, cex = 1.4)
+abline(v=5,lty=3)
+ar_train_mtry[4]-ar_test_mtry[4]
+
+plot(2:8,err_train,col=3,xlab="mtry",ylab="err",pch=19)
+lines(2:8,err_test, pch=19,type="p",col=2)
+legend("bottomleft", legend = c("Training", "Test"),
+       col = c(3,2), lty = 1:2, cex = 1.4)
+
+###### si sceglie mtry = 5, la distanza fra gli errori è ancora non molto elevata ######
+
+### in alternativa puoi usare il grid search tuning ###
+
+# library(caret)
+# control <- trainControl(method="repeatedcv", number=10, repeats =3)
+# rfGrid <-  expand.grid(mtry = 2:8)
+
+# rfFit <- train(IND_BAD ~ ., data = TrainSet, 
+#               method = "rf", 
+#               trControl = control, 
+#               verbose = FALSE, 
+#               tuneGrid = rfGrid)
+# rfFit
+# trellis.par.set(caretTheme()) #
+# plot(rfFit)
+
+########################################################################################
+
+model1 <- randomForest(IND_BAD ~ ., data = TrainSet, ntree=50, mtry=5, type=classification)
+# ntree e mtry -> numero di alberi e variabili provate 
+# error rate = 5.68% 
+importance(model1,type=2)
+# mean decrease in node impurity
+# the sum over the number of splits (across all tress) that include the feature, 
+# proportionally to the number of samples it splits
+# Random forest tends to split out the results by using the most statistically significant features.
+varImpPlot(model1,type=2)
+# CCU_A_SM CCROTUT_TM RTMCI_A_SM RTU_IMPINIZ_AM ....
+# flag hanno poca importanza nel modello
+
+####### provi senza i flag #######
+
+var=seq(from = 1, to = 21, by=2)
+TrainSet_2=TrainSet[,var]
+TestSet_2=TestSet[,var]
+
+############# TRAIN #############
+
+model1_2 <- randomForest(IND_BAD ~ ., data = TrainSet_2, ntree=40, mtry=5, type=classification)
+# ntree e mtry -> numero di alberi e variabili utilizzate in ogni passaggio 
+# error rate = 5.97% 
+importance(model1_2,type=2)
+varImpPlot(model1_2,type=2)
+
+# Predicting on train set
+predTrain_2 <- predict(model1_2, TrainSet_2, type = "class")
+
+## SOMERS D e C ##
+
+## ??
+
+## AR - AUC - TCC - sensitivity - specificity ##
+
+ar_train_2 =mean(predTrain_2 == TrainSet_2$IND_BAD)  # accuracy (AR)  
+auc_train_rf= abs((ar_train_2+1)/2)
+auc_train_rf #0.990199
+conf_matrix_rf=table(predTrain_2, TrainSet_2$IND_BAD) 
+
+pos_rf=conf_matrix_rf[1,1]/(conf_matrix_rf[1,1]+conf_matrix_rf[1,2])
+neg_rf=conf_matrix_rf[2,2]/(conf_matrix_rf[2,1]+conf_matrix_rf[2,2])
+TCC_rf=mean(pos_rf,neg_rf)
+TCC_rf #tasso di corretta classificazione test = 0.9802854
+sens_rf=conf_matrix_rf[1,1]/(conf_matrix_rf[1,1]+conf_matrix_rf[2,1])
+spec_rf=conf_matrix_rf[2,2]/(conf_matrix_rf[1,2]+conf_matrix_rf[2,2])
+
+############# TEST ##############
+
+# Predicting on test set
+predTest_2 <- predict(model1_2, TestSet_2, type = "class")
+
+## SOMERS D e C ##
+
+## ??
+
+## AR - AUC - TCC - sensitivity - specificity ##
+
+ar_test_2=mean(predTest_2 == TestSet_2$IND_BAD)  # accuracy (AR)      
+auc_test_rf = abs((ar_test_2+1)/2)
+auc_test_rf # 0.9706581
+conf_matrix_rft=table(predTest_2,TestSet_2$IND_BAD)
+
+pos_rft=conf_matrix_rft[1,1]/(conf_matrix_rft[1,1]+conf_matrix_rft[1,2])
+neg_rft=conf_matrix_rft[2,2]/(conf_matrix_rft[2,1]+conf_matrix_rft[2,2])
+TCC_rft=mean(pos_rft,neg_rft)
+TCC_rft #tasso di corretta classificazione test = 0.9473936
+sens_rft=conf_matrix_rft[1,1]/(conf_matrix_rft[1,1]+conf_matrix_rft[2,1])
+spec_rft=conf_matrix_rft[2,2]/(conf_matrix_rft[1,2]+conf_matrix_rft[2,2])
+
+tabella_rf=matrix(0,7,2)
+tabella_rf=as.data.frame(tabella_rf)
+tabella_rf[1,]=c(0,0)
+tabella_rf[2,]=c(0,0)
+tabella_rf[3,]=c(ar_train_2,ar_test_2)
+tabella_rf[4,]=c(auc_train_rf,auc_test_rf)
+tabella_rf[5,]=c(TCC_rf,TCC_rft)
+tabella_rf[6,]=c(sens_rf,sens_rft)
+tabella_rf[7,]=c(spec_rf,spec_rft)
+rownames(tabella_rf)=c("SomersD","c","AR","AUC","TCC","sensitivity","specificity")
+colnames(tabella_rf)=c("Training","Test")
+tabella_rf
+
+################## ultimo controllo -> cv di tipo k-fold ##################
+### provo le performance su 10 diversi campioni di training e test set ###
+
+auc_train_rf_v=0
+auc_test_rf_v=0
+for(i in 1:50){
+  set.seed(i)
+  train_def <- sample(nrow(default), 0.75*nrow(default), replace = FALSE)
+  TrainSet1 <- default[train_def,] # training set per i default
+  TestSet1 <- default[-train_def,] # test set per i default
+  
+  train_bon <- sample(nrow(bonis), 0.75*nrow(bonis), replace = FALSE)
+  TrainSet2 <- bonis[train_bon,] # training per i default
+  TestSet2 <- bonis[-train_bon,]
+  
+  TrainSet=as.data.frame(rbind(TrainSet1,TrainSet2))
+  TestSet=as.data.frame(rbind(TestSet1,TestSet2))
+  TrainSet$IND_BAD=as.factor(TrainSet$IND_BAD)
+  TestSet$IND_BAD=as.factor(TestSet$IND_BAD)
+  
+  model1_try <- randomForest(IND_BAD ~ ., data = TrainSet, ntree=30, mtry=5, type=classification)
+  predTrain <- predict(model1_try, TrainSet, type = "class")
+  # Checking classification accuracy
+  ar_train=mean(predTrain == TrainSet$IND_BAD)  # accuracy (AR)  
+  auc_train_rf_try= abs((ar_train+1)/2)
+  auc_train_rf_v=c(auc_train_rf_v,auc_train_rf_try)
+  
+  # Predicting on test set
+  predTest <- predict(model1_try, TestSet, type = "class")
+  # Checking classification accuracy
+  ar_test=mean(predTest == TestSet$IND_BAD)  # accuracy (AR)      
+  auc_test_rf_try = abs((ar_test+1)/2)
+  auc_test_rf_v=c(auc_test_rf_v,auc_test_rf_try)
+}
+
+# performance sempre intorno al 97%
+auc_train_rf_v[-1]
+auc_test_rf_v[-1]
+
