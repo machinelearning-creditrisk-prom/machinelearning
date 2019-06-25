@@ -53,11 +53,13 @@ test=std.db[!sample,]
 ind_bad.is=db1$IND_BAD[sample]
 ind_bad.os=db1$IND_BAD[!sample]
 
+
 library(class)
 set.seed (1)
 knn.pred=knn(train,test,ind_bad.is,k=1)
 knn.table=table(knn.pred,ind_bad.os)
 
+#descriptive statistics, 1st-2nd type errors, specificity, sensitivity, AR, TC
 
 err1=knn.table[2,1]/(knn.table[1,1]+knn.table[2,1])
 err2=knn.table[1,2]/(knn.table[1,2]+knn.table[2,2])
@@ -68,7 +70,7 @@ sens=knn.table[2,2]/(knn.table[2,2]+knn.table[1,2])
 AR=rowSums(knn.table)[1]/(sum(knn.table))
 TC=(sens+spec)/2
 
-
+#whoknows package for computing somers'D and other stuff
 install.packages("oii")
 library(oii)
 
